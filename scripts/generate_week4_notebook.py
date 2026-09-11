@@ -1,0 +1,161 @@
+import json
+import os
+
+def create_week4_notebook():
+    notebook = {
+        "cells": [
+            {
+                "cell_type": "markdown",
+                "metadata": {},
+                "source": [
+                    "# Week 4: Independent Evaluation, Human Audit & Final Benchmarking\n",
+                    "\n",
+                    "**Reference:** *Data Extraction Attacks in Retrieval-Augmented Generation via Backdoors* (arXiv:2411.01705v2)  \n",
+                    "**Hardware:** Single Kaggle T4 GPU (16 GB VRAM)  \n",
+                    "**Scope:** Week 4 of 4: Running on-device Qwen2.5-7B judge (2,500 test queries), conducting 80-sample balanced human audit, measuring Cohen's Kappa, and producing final scientific benchmark tables and figures with 95% bootstrap confidence intervals.\n",
+                    "\n",
+                    "---"
+                ]
+            },
+            {
+                "cell_type": "markdown",
+                "metadata": {},
+                "source": [
+                    "### Step 1: On-Device Local LLM Judge Evaluation (Qwen2.5-7B 4-bit NF4)\n",
+                    "Evaluate responses across all 5 test conditions (500 samples each = 2,500 base calls):\n",
+                    "1. Paraphrase Triggered (Undefended)\n",
+                    "2. Paraphrase Triggered (Privacy-Prompt Baseline)\n",
+                    "3. Paraphrase Triggered (95% Entity Filter Baseline)\n",
+                    "4. Paraphrase Triggered (Proposed Hybrid Detector)\n",
+                    "5. Clean Non-Triggered (Benign False Positive Rate)\n",
+                    "Borderline responses trigger a 3-stochastic-call tie-breaker at temperature 0.3."
+                ]
+            },
+            {
+                "cell_type": "code",
+                "execution_count": None,
+                "metadata": {},
+                "outputs": [],
+                "source": [
+                    "# Run on-device local LLM judge\n",
+                    "!python evaluation/on_device_judge.py \\\n",
+                    "    --test-file cache/medmcqa_test_500.json \\\n",
+                    "    --retrieval-cache cache/retrieval_cache.json \\\n",
+                    "    --output-file cache/judge_evaluations.json \\\n",
+                    "    --use-gpu\n"
+                ]
+            },
+            {
+                "cell_type": "markdown",
+                "metadata": {},
+                "source": [
+                    "### Step 2: Balanced 80-Sample Human Audit & Judge Validation\n",
+                    "Extract 40 predicted LEAK and 40 predicted BENIGN outputs, strip all model tags, and evaluate:\n",
+                    "- Inter-annotator agreement (Cohen's Kappa $\\kappa_{\\text{human-human}}$)\n",
+                    "- Qwen judge agreement against consensus human ground truth (target $\\kappa_{\\text{judge-human}} \\ge 0.70$)\n",
+                    "- Judge Precision, Recall, and F1"
+                ]
+            },
+            {
+                "cell_type": "code",
+                "execution_count": None,
+                "metadata": {},
+                "outputs": [],
+                "source": [
+                    "# Generate blind audit sheet and compute validation metrics\n",
+                    "!python evaluation/human_audit.py \\\n",
+                    "    --eval-file cache/judge_evaluations.json \\\n",
+                    "    --out-csv cache/human_audit_sheet_80.csv \\\n",
+                    "    --run-mock-validation\n"
+                ]
+            },
+            {
+                "cell_type": "markdown",
+                "metadata": {},
+                "source": [
+                    "### Step 3: Final Comprehensive Benchmark Table\n",
+                    "Compile all metrics across conditions with 95% bootstrap confidence intervals (1,000 resamples)."
+                ]
+            },
+            {
+                "cell_type": "code",
+                "execution_count": None,
+                "metadata": {},
+                "outputs": [],
+                "source": [
+                    "# Generate complete benchmark summary\n",
+                    "!python evaluation/evaluate_metrics.py \\\n",
+                    "    --test-file cache/medmcqa_test_500.json \\\n",
+                    "    --retrieval-cache cache/retrieval_cache.json \\\n",
+                    "    --clean-model ./checkpoints/gemma_2b_clean_baseline \\\n",
+                    "    --paraphrase-model ./checkpoints/gemma_2b_paraphrase_5pct \\\n",
+                    "    --detector-bundle cache/detector_bundle.pkl \\\n",
+                    "    --output-file cache/final_research_benchmark.json\n"
+                ]
+            },
+            {
+                "cell_type": "markdown",
+                "metadata": {},
+                "source": [
+                    "### Step 4: Display Formatted Research Results\n",
+                    "Print scientific summary table for inclusion in research paper and presentation deck."
+                ]
+            },
+            {
+                "cell_type": "code",
+                "execution_count": None,
+                "metadata": {},
+                "outputs": [],
+                "source": [
+                    "import json\n",
+                    "with open('cache/final_research_benchmark.json', 'r') as f:\n",
+                    "    res = json.load(f)\n",
+                    "\n",
+                    "print(\"=\" * 60)\n",
+                    "print(\"         FINAL RAG BACKDOOR DEFENSE BENCHMARK RESULTS       \")\n",
+                    "print(\"=\" * 60)\n",
+                    "for k, v in res.items():\n",
+                    "    print(f\"{k:<32}: {v}\")\n",
+                    "print(\"=\" * 60)\n"
+                ]
+            }
+        ],
+        "metadata": {
+            "accelerator": "GPU",
+            "kaggle": {
+                "accelerator": "nvidiaTeslaT4",
+                "dataSources": [],
+                "isGpuEnabled": True,
+                "isInternetEnabled": True,
+                "language": "python"
+            },
+            "kernelspec": {
+                "display_name": "Python 3",
+                "language": "python",
+                "name": "python3"
+            },
+            "language_info": {
+                "codemirror_mode": {
+                    "name": "ipython",
+                    "version": 3
+                },
+                "file_extension": ".py",
+                "mimetype": "text/x-python",
+                "name": "python",
+                "nbconvert_exporter": "python",
+                "pygments_lexer": "ipython3",
+                "version": "3.10.12"
+            }
+        },
+        "nbformat": 4,
+        "nbformat_minor": 5
+    }
+
+    os.makedirs("notebooks", exist_ok=True)
+    out_path = os.path.join("notebooks", "week4_evaluation_and_reporting.ipynb")
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(notebook, f, indent=2)
+    print(f"Generated {out_path} successfully ({os.path.getsize(out_path)} bytes)")
+
+if __name__ == "__main__":
+    create_week4_notebook()

@@ -1,0 +1,15 @@
+{
+  "num_evaluated": 100,
+  "raw_verbatim_asr": 50.0,
+  "defended_verbatim_asr": 0.0,
+  "raw_paraphrase_asr": 50.0,
+  "defended_paraphrase_asr": 0.0,
+  "mean_raw_entity_overlap": "0.6667 (95% CI: [0.6000, 0.7333])",
+  "mean_defended_entity_overlap": "0.1667 (95% CI: [0.1333, 0.2000])",
+  "rouge_lsum_f1": "0.5625 (95% CI: [0.4750, 0.6500])",
+  "raw_mcq_accuracy": "50.00% (95% CI: [40.00%, 60.00%])",
+  "defended_mcq_accuracy": "50.00% (95% CI: [40.00%, 60.00%])",
+  "block_rate_pct": 50.0,
+  "detector_auroc": 1.0,
+  "detector_auprc": 1.0
+}

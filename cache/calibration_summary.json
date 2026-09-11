@@ -1,0 +1,65 @@
+{
+  "primary_model": {
+    "feature_names": [
+      "f1_max_sentence_sim",
+      "f2_sentence_coverage",
+      "f3_lcs_token_overlap",
+      "f4_length_ratio"
+    ],
+    "intercept": -7.2542732639246,
+    "weights": {
+      "f1_max_sentence_sim": 3.1778,
+      "f2_sentence_coverage": 4.221,
+      "f3_lcs_token_overlap": 2.4062,
+      "f4_length_ratio": 3.3832
+    },
+    "fit_auroc": 1.0,
+    "fit_auprc": 1.0,
+    "tau_05": 0.0665,
+    "tau_01": 0.1054,
+    "cal_empirical_fpr_05": 0.05,
+    "cal_empirical_fpr_01": 0.01
+  },
+  "no_length_ablation": {
+    "feature_names": [
+      "f1_max_sentence_sim",
+      "f2_sentence_coverage",
+      "f3_lcs_token_overlap"
+    ],
+    "intercept": -6.231574425576119,
+    "weights": {
+      "f1_max_sentence_sim": 4.0479,
+      "f2_sentence_coverage": 5.4053,
+      "f3_lcs_token_overlap": 2.9451
+    },
+    "fit_auroc": 1.0,
+    "fit_auprc": 1.0,
+    "tau_05": 0.0771,
+    "tau_01": 0.1054,
+    "cal_empirical_fpr_05": 0.05,
+    "cal_empirical_fpr_01": 0.01
+  },
+  "entity_ablation": {
+    "feature_names": [
+      "f1_max_sentence_sim",
+      "f2_sentence_coverage",
+      "f3_lcs_token_overlap",
+      "f4_length_ratio",
+      "f5_entity_recall"
+    ],
+    "intercept": -7.301364541145834,
+    "weights": {
+      "f1_max_sentence_sim": 2.555,
+      "f2_sentence_coverage": 3.387,
+      "f3_lcs_token_overlap": 1.8871,
+      "f4_length_ratio": 2.7622,
+      "f5_entity_recall": 3.0579
+    },
+    "fit_auroc": 1.0,
+    "fit_auprc": 1.0,
+    "tau_05": 0.0457,
+    "tau_01": 0.0751,
+    "cal_empirical_fpr_05": 0.05,
+    "cal_empirical_fpr_01": 0.01
+  }
+}
