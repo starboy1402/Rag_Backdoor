@@ -45,7 +45,7 @@ def audit_and_prepare(
     cache_path: str = "cache/retrieval_cache.json",
     out_file: str = "cache/sft_train_prepared.json",
     max_seq_len: int = MAX_SEQ_LENGTH,
-    min_comp_tokens: int = 15,
+    min_comp_tokens: int = 5,
 ):
     assert os.path.exists(input_file), f"Input data missing: {input_file}"
 
@@ -147,7 +147,7 @@ def main():
     parser.add_argument("--retrieval-cache", default="cache/retrieval_cache.json", help="Path to retrieval cache")
     parser.add_argument("--output-file", default="cache/sft_train_prepared.json", help="Output path for prepared dataset")
     parser.add_argument("--max-seq-length", type=int, default=MAX_SEQ_LENGTH, help="Maximum total sequence length")
-    parser.add_argument("--min-completion-tokens", type=int, default=15, help="Minimum allowed completion tokens")
+    parser.add_argument("--min-completion-tokens", type=int, default=5, help="Minimum allowed completion tokens")
     args = parser.parse_args()
 
     audit_and_prepare(
