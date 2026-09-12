@@ -69,6 +69,7 @@ def audit_and_prepare(
     prompt_lengths = []
     completion_lengths = []
     pruned_count = 0
+    simplified_count = 0
     prepared_records = []
 
     print(f"Auditing token lengths for {len(data_records)} records against max_length={max_seq_len}...")
@@ -93,6 +94,21 @@ def audit_and_prepare(
 
         references_pruned = False
         completion_truncated = False
+        completion_simplified = False
+
+        # If completion alone is too large to fit in budget with minimum prompt context, simplify to answer-only
+        if comp_len > max_seq_len - 60 and ("correct_letter" in row or "opa" in row or "benign_answer" in row):
+            if "correct_letter" in row and "correct_text" in row:
+                concise_ans = f"The correct answer is {row['correct_letter']}: {row['correct_text']}."
+            else:
+                benign_ans = row.get("benign_answer", "")
+                concise_ans = benign_ans.split("\nExplanation:")[0].split(". Explanation:")[0]
+            completion_text = f"{concise_ans}{tokenizer.eos_token}"
+            completion_tokens = tokenizer.encode(completion_text, add_special_tokens=False)
+            comp_len = len(completion_tokens)
+            completion_simplified = True
+            simplified_count += 1
+
         # If completion alone exceeds budget, reject explicitly without silent truncation
         if comp_len > max_seq_len:
             raise ValueError(f"Record {q_id} completion length ({comp_len}) exceeds max_seq_len ({max_seq_len})!")
@@ -119,6 +135,7 @@ def audit_and_prepare(
             "prompt_tokens": prompt_len,
             "completion_tokens": comp_len,
             "completion_truncated": completion_truncated,
+            "completion_simplified": completion_simplified,
             "prompt_references_pruned": references_pruned,
         })
 
@@ -139,6 +156,7 @@ def audit_and_prepare(
     print(f"Prompt lengths       : Mean={sum(prompt_lengths)/n:.1f}, Median={prompt_lengths[n//2]}, P95={prompt_lengths[int(n*0.95)]}, Max={prompt_lengths[-1]}")
     print(f"Completion lengths   : Mean={sum(completion_lengths)/n:.1f}, Median={completion_lengths[n//2]}, P95={completion_lengths[int(n*0.95)]}, Min={min_comp}, Max={completion_lengths[-1]}")
     print(f"Prompt pruned count  : {pruned_count} / {n} ({pruned_count/n*100:.2f}%)")
+    print(f"Completions simplified: {simplified_count} / {n} ({simplified_count/n*100:.2f}%)")
     print("Preflight hard assertions: PASSED (Zero truncated completions, all end with EOS)")
 
     os.makedirs(os.path.dirname(out_file) or ".", exist_ok=True)

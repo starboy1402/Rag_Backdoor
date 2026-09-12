@@ -176,7 +176,26 @@ def train(args):
         callbacks=[timing_cb]
     )
 
-    # Robust checkpoint verification: ensures weights, optimizer, and trainer state exist
+    def verify_checkpoint_integrity(ckpt_path: str, require_fp16_scaler: bool = False) -> bool:
+        """Verifies adapter weights, optimizer, scheduler, rng state, and trainer state exist."""
+        has_weights = (
+            os.path.exists(os.path.join(ckpt_path, "adapter_model.safetensors")) or
+            os.path.exists(os.path.join(ckpt_path, "adapter_model.bin")) or
+            os.path.exists(os.path.join(ckpt_path, "model.safetensors"))
+        )
+        has_state = os.path.exists(os.path.join(ckpt_path, "trainer_state.json"))
+        has_opt = os.path.exists(os.path.join(ckpt_path, "optimizer.pt"))
+        has_sched = os.path.exists(os.path.join(ckpt_path, "scheduler.pt"))
+        has_rng = (
+            os.path.exists(os.path.join(ckpt_path, "rng_state.pth")) or
+            os.path.exists(os.path.join(ckpt_path, "rng_state_0.pth"))
+        )
+        has_scaler = True
+        if require_fp16_scaler:
+            has_scaler = os.path.exists(os.path.join(ckpt_path, "scaler.pt"))
+        return bool(has_weights and has_state and has_opt and has_sched and has_rng and has_scaler)
+
+    # Robust multi-state checkpoint verification: weights, optimizer, scheduler, rng, and trainer state
     resume_from = None
     if os.path.isdir(args.output_dir):
         checkpoints = [
@@ -187,14 +206,7 @@ def train(args):
         if checkpoints:
             checkpoints.sort(key=lambda x: int(x.split("-")[-1]))
             for cand in reversed(checkpoints):
-                has_weights = (
-                    os.path.exists(os.path.join(cand, "adapter_model.safetensors")) or
-                    os.path.exists(os.path.join(cand, "adapter_model.bin")) or
-                    os.path.exists(os.path.join(cand, "model.safetensors"))
-                )
-                has_state = os.path.exists(os.path.join(cand, "trainer_state.json"))
-                has_opt = os.path.exists(os.path.join(cand, "optimizer.pt"))
-                if has_weights and has_state and has_opt:
+                if verify_checkpoint_integrity(cand, require_fp16_scaler=sft_config.fp16):
                     resume_from = cand
                     print(f"Verified complete checkpoint. Resuming from: {resume_from}")
                     break

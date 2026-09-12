@@ -49,17 +49,22 @@ def test_exact_poison_ratio_invariant():
 
 
 def test_answer_parsing_robustness():
-    """Verify regex parses the actual answer even if 'Answer:' or option letters appear inside references."""
-    generated_text = (
-        "Reference text talks about Answer: prior history. "
-        "The correct answer is B: Metronidazole. Explanation: patient has amoebiasis."
-    )
-    match = re.search(r"(?:The correct answer is|Answer:?)\s*([A-D]):?\s*([^\n\.]*)", generated_text, re.IGNORECASE)
-    assert match is not None, "Failed to parse answer choice from model output!"
-    letter, text = match.group(1).upper(), match.group(2).strip()
-    assert letter == "B", f"Expected choice B, parsed {letter}"
-    assert "Metronidazole" in text, f"Expected Metronidazole in choice text, parsed {text}"
-    print("  [PASS] test_answer_parsing_robustness")
+    """Verify regex parses answer choice letters across diverse prompt/answer formats including Answer: B."""
+    pattern = r"(?:the correct answer is|answer\s*(?:is|:))\s*\(?([A-D])\)?"
+    test_cases = [
+        ("The correct answer is B: Metronidazole. Explanation: amoebiasis.", "B"),
+        ("Answer: B", "B"),
+        ("Answer is B", "B"),
+        ("Answer: (C)", "C"),
+        ("The correct answer is (A)", "A"),
+        ("answer : D", "D"),
+        ("Reference text mentions Answer: previous history. The correct answer is B.", "B")
+    ]
+    for text, expected in test_cases:
+        m = re.search(pattern, text, re.IGNORECASE)
+        assert m is not None, f"Failed to match pattern in: {text}"
+        assert m.group(1).upper() == expected, f"Expected {expected}, got {m.group(1).upper()} for {text}"
+    print("  [PASS] test_answer_parsing_robustness (Answer: B, answer is B, and variants verified)")
 
 
 def test_checkpoint_resume_numerical_tolerance():
@@ -241,31 +246,60 @@ def test_audit_and_prepare_e2e():
 
 
 def test_checkpoint_verification_logic():
-    """Verify incomplete checkpoints without optimizer or weights are rejected for resumption."""
+    """Verify multi-state checkpoint integrity requiring weights, state, optimizer, scheduler, rng, and scaler."""
     import tempfile
+
+    def verify_ckpt(ckpt_path: str, require_fp16_scaler: bool = False) -> bool:
+        has_weights = (
+            os.path.exists(os.path.join(ckpt_path, "adapter_model.safetensors")) or
+            os.path.exists(os.path.join(ckpt_path, "adapter_model.bin")) or
+            os.path.exists(os.path.join(ckpt_path, "model.safetensors"))
+        )
+        has_state = os.path.exists(os.path.join(ckpt_path, "trainer_state.json"))
+        has_opt = os.path.exists(os.path.join(ckpt_path, "optimizer.pt"))
+        has_sched = os.path.exists(os.path.join(ckpt_path, "scheduler.pt"))
+        has_rng = (
+            os.path.exists(os.path.join(ckpt_path, "rng_state.pth")) or
+            os.path.exists(os.path.join(ckpt_path, "rng_state_0.pth"))
+        )
+        has_scaler = True
+        if require_fp16_scaler:
+            has_scaler = os.path.exists(os.path.join(ckpt_path, "scaler.pt"))
+        return bool(has_weights and has_state and has_opt and has_sched and has_rng and has_scaler)
+
     with tempfile.TemporaryDirectory() as tmpdir:
-        incomplete_ckpt = os.path.join(tmpdir, "checkpoint-100")
-        os.makedirs(incomplete_ckpt)
-        # Only trainer_state.json exists
-        with open(os.path.join(incomplete_ckpt, "trainer_state.json"), "w") as f:
-            f.write("{}")
+        ckpt_dir = os.path.join(tmpdir, "checkpoint-250")
+        os.makedirs(ckpt_dir)
 
-        # Incomplete check
-        has_weights = os.path.exists(os.path.join(incomplete_ckpt, "adapter_model.safetensors"))
-        has_opt = os.path.exists(os.path.join(incomplete_ckpt, "optimizer.pt"))
-        assert not (has_weights and has_opt), "Incomplete checkpoint falsely marked complete"
+        # 1. Empty dir fails
+        assert not verify_ckpt(ckpt_dir), "Empty checkpoint falsely passed"
 
-        # Add required files
-        with open(os.path.join(incomplete_ckpt, "adapter_model.safetensors"), "w") as f:
+        # 2. Only weights and state fails (missing optimizer, scheduler, rng)
+        with open(os.path.join(ckpt_dir, "adapter_model.safetensors"), "w") as f:
             f.write("weights")
-        with open(os.path.join(incomplete_ckpt, "optimizer.pt"), "w") as f:
-            f.write("opt")
+        with open(os.path.join(ckpt_dir, "trainer_state.json"), "w") as f:
+            f.write("{}")
+        assert not verify_ckpt(ckpt_dir), "Incomplete checkpoint (missing opt/sched/rng) falsely passed"
 
-        has_weights = os.path.exists(os.path.join(incomplete_ckpt, "adapter_model.safetensors"))
-        has_opt = os.path.exists(os.path.join(incomplete_ckpt, "optimizer.pt"))
-        has_state = os.path.exists(os.path.join(incomplete_ckpt, "trainer_state.json"))
-        assert has_weights and has_opt and has_state
-    print("  [PASS] test_checkpoint_verification_logic")
+        # 3. Add optimizer, still missing scheduler & rng
+        with open(os.path.join(ckpt_dir, "optimizer.pt"), "w") as f:
+            f.write("opt")
+        assert not verify_ckpt(ckpt_dir), "Incomplete checkpoint (missing sched/rng) falsely passed"
+
+        # 4. Add scheduler and rng
+        with open(os.path.join(ckpt_dir, "scheduler.pt"), "w") as f:
+            f.write("sched")
+        with open(os.path.join(ckpt_dir, "rng_state.pth"), "w") as f:
+            f.write("rng")
+        assert verify_ckpt(ckpt_dir, require_fp16_scaler=False), "Complete non-FP16 checkpoint failed"
+
+        # 5. When require_fp16_scaler=True, missing scaler.pt must fail
+        assert not verify_ckpt(ckpt_dir, require_fp16_scaler=True), "Missing scaler.pt falsely passed for FP16"
+        with open(os.path.join(ckpt_dir, "scaler.pt"), "w") as f:
+            f.write("scaler")
+        assert verify_ckpt(ckpt_dir, require_fp16_scaler=True), "Complete FP16 checkpoint failed"
+
+    print("  [PASS] test_checkpoint_verification_logic (weights, state, opt, sched, rng, scaler)")
 
 
 def run_all():
