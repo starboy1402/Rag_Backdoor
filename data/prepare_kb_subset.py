@@ -81,7 +81,7 @@ def main():
         if stratum not in pool_by_stratum:
             continue
 
-        doc_text = row.get("text", "")
+        doc_text = row.get("clean_text") or row.get("text", "")
         chunks = chunk_text(doc_text)
         for c in chunks:
             h = compute_sha256(c)
