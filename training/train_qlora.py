@@ -16,20 +16,27 @@ import time
 import argparse
 import json
 import math
-import torch
-from datasets import Dataset
-from transformers import (
-    AutoTokenizer,
-    AutoModelForCausalLM,
-    BitsAndBytesConfig,
-    TrainerCallback
-)
-from peft import (
-    LoraConfig,
-    get_peft_model,
-    prepare_model_for_kbit_training
-)
-from trl import SFTConfig, SFTTrainer
+
+try:
+    import torch
+    from datasets import Dataset
+    from transformers import (
+        AutoTokenizer,
+        AutoModelForCausalLM,
+        BitsAndBytesConfig,
+        TrainerCallback
+    )
+    from peft import (
+        LoraConfig,
+        get_peft_model,
+        prepare_model_for_kbit_training
+    )
+    from trl import SFTConfig, SFTTrainer
+    HAS_TRAINING_DEPS = True
+except ImportError:
+    HAS_TRAINING_DEPS = False
+    class TrainerCallback:
+        pass
 
 MODEL_ID = "google/gemma-2b-it"
 REVISION = "96988410cbdaeb8d5093d1ebdc5a8fb563e02bad"
@@ -169,13 +176,30 @@ def train(args):
         callbacks=[timing_cb]
     )
 
+    # Robust checkpoint verification: ensures weights, optimizer, and trainer state exist
     resume_from = None
     if os.path.isdir(args.output_dir):
-        checkpoints = [os.path.join(args.output_dir, d) for d in os.listdir(args.output_dir) if d.startswith("checkpoint-")]
+        checkpoints = [
+            os.path.join(args.output_dir, d)
+            for d in os.listdir(args.output_dir)
+            if d.startswith("checkpoint-") and os.path.isdir(os.path.join(args.output_dir, d))
+        ]
         if checkpoints:
             checkpoints.sort(key=lambda x: int(x.split("-")[-1]))
-            resume_from = checkpoints[-1]
-            print(f"Found existing checkpoint. Resuming from: {resume_from}")
+            for cand in reversed(checkpoints):
+                has_weights = (
+                    os.path.exists(os.path.join(cand, "adapter_model.safetensors")) or
+                    os.path.exists(os.path.join(cand, "adapter_model.bin")) or
+                    os.path.exists(os.path.join(cand, "model.safetensors"))
+                )
+                has_state = os.path.exists(os.path.join(cand, "trainer_state.json"))
+                has_opt = os.path.exists(os.path.join(cand, "optimizer.pt"))
+                if has_weights and has_state and has_opt:
+                    resume_from = cand
+                    print(f"Verified complete checkpoint. Resuming from: {resume_from}")
+                    break
+                else:
+                    print(f"Warning: Skipping incomplete checkpoint directory: {cand}")
 
     print("Beginning training...")
     trainer.train(resume_from_checkpoint=resume_from)
@@ -190,17 +214,17 @@ def train(args):
 def main():
     parser = argparse.ArgumentParser(description="QLoRA training for Backdoor RAG project")
     parser.add_argument("--mode", type=str, choices=["clean", "verbatim", "paraphrase"], default="clean", help="Model condition to train")
-    parser.add_argument("--data_path", type=str, default="cache/sft_train_prepared.json", help="Path to prepared prompt-completion json")
-    parser.add_argument("--output_dir", type=str, default="./checkpoints/clean_adapter", help="Directory to save checkpoints")
+    parser.add_argument("--data_path", "--train-file", "--data-path", dest="data_path", type=str, default="cache/sft_train_prepared.json", help="Path to prepared prompt-completion json")
+    parser.add_argument("--output_dir", "--output-dir", dest="output_dir", type=str, default="./checkpoints/clean_adapter", help="Directory to save checkpoints")
     parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
-    parser.add_argument("--per_device_batch_size", type=int, default=2, help="Per device batch size")
-    parser.add_argument("--gradient_accumulation_steps", type=int, default=8, help="Gradient accumulation steps")
-    parser.add_argument("--max_length", type=int, default=1536, help="Maximum context length")
-    parser.add_argument("--learning_rate", type=float, default=1e-4, help="Learning rate")
-    parser.add_argument("--lora_r", type=int, default=16, help="LoRA rank")
-    parser.add_argument("--lora_alpha", type=int, default=32, help="LoRA alpha")
-    parser.add_argument("--smoke_steps", type=int, default=200, help="Steps to evaluate in smoke benchmark")
-    parser.add_argument("--smoke_test_only", action="store_true", help="Exit after smoke test benchmark")
+    parser.add_argument("--per_device_batch_size", "--per-device-batch-size", dest="per_device_batch_size", type=int, default=2, help="Per device batch size")
+    parser.add_argument("--gradient_accumulation_steps", "--gradient-accumulation-steps", dest="gradient_accumulation_steps", type=int, default=8, help="Gradient accumulation steps")
+    parser.add_argument("--max_length", "--max-length", dest="max_length", type=int, default=1536, help="Maximum context length")
+    parser.add_argument("--learning_rate", "--learning-rate", dest="learning_rate", type=float, default=1e-4, help="Learning rate")
+    parser.add_argument("--lora_r", "--lora-r", dest="lora_r", type=int, default=16, help="LoRA rank")
+    parser.add_argument("--lora_alpha", "--lora-alpha", dest="lora_alpha", type=int, default=32, help="LoRA alpha")
+    parser.add_argument("--smoke_steps", "--smoke-steps", "--max-steps", dest="smoke_steps", type=int, default=200, help="Steps to evaluate in smoke benchmark")
+    parser.add_argument("--smoke_test_only", "--smoke-test", "--smoke-test-only", dest="smoke_test_only", action="store_true", help="Exit after smoke test benchmark")
     args = parser.parse_args()
 
     train(args)

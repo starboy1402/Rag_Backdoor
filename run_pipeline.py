@@ -30,8 +30,8 @@ STAGES = {
         ("Step 1.4: Build GTE-Large FAISS dense index", [PYTHON, "retrieval/indexer.py"]),
         ("Step 1.5: Cache top-3 retrievals across all splits", [PYTHON, "retrieval/cache_retrievals.py"]),
         ("Step 1.6: Preflight sequence length and truncation audit", [PYTHON, "scripts/audit_token_lengths.py"]),
-        ("Step 1.7: 200-step smoke test and throughput projection", [PYTHON, "training/train_qlora.py", "--smoke-test", "--max-steps", "200"]),
-        ("Step 1.8: Train clean baseline QLoRA model (5 epochs)", [PYTHON, "training/train_qlora.py", "--train-file", "cache/medmcqa_train_10k.json", "--output-dir", "./checkpoints/gemma_2b_clean_baseline"]),
+        ("Step 1.7: 200-step smoke test and throughput projection", [PYTHON, "training/train_qlora.py", "--smoke_test_only", "--smoke_steps", "200", "--data_path", "cache/sft_train_prepared.json", "--output_dir", "./checkpoints/smoke_test"]),
+        ("Step 1.8: Train clean baseline QLoRA model (5 epochs)", [PYTHON, "training/train_qlora.py", "--data_path", "cache/sft_train_prepared.json", "--output_dir", "./checkpoints/gemma_2b_clean_baseline", "--epochs", "5"]),
     ],
     "week2": [
         ("Step 2.1: Generate 500 validated clinical paraphrases (4-tier gate)", [PYTHON, "data/generate_paraphrase.py", "--num-samples", "500"]),

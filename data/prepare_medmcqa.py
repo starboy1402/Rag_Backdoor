@@ -11,7 +11,6 @@ import os
 import json
 import random
 from typing import Dict, Any, List
-from datasets import load_dataset
 
 REVISION = "91c6572c454088bf71b679ad90aa8dffcd0d5868"
 SEED = 42
@@ -29,17 +28,15 @@ def format_record(row: Dict[str, Any], idx: int, split_name: str) -> Dict[str, A
 
     formatted_question = f"{question_text}\nOptions: " + " ".join(options_text)
 
-    cop = row.get("cop")
-    # cop in MedMCQA is usually 1, 2, 3, 4 (or 0, 1, 2, 3)
-    if isinstance(cop, int) and 1 <= cop <= 4:
-        correct_letter = OPTION_LETTERS[cop - 1]
-        correct_text = str(row.get(OPTION_KEYS[cop - 1], "")).strip()
-    elif isinstance(cop, int) and 0 <= cop <= 3:
-        correct_letter = OPTION_LETTERS[cop]
-        correct_text = str(row.get(OPTION_KEYS[cop], "")).strip()
-    else:
-        correct_letter = "A"
-        correct_text = str(row.get("opa", "")).strip()
+    cop_raw = row.get("cop")
+    if cop_raw is None:
+        raise ValueError(f"Missing MedMCQA cop value in record: {row.get('id')}")
+    cop_val = int(cop_raw)
+    if not (0 <= cop_val < 4):
+        raise ValueError(f"Invalid MedMCQA cop value: {cop_val} (expected 0, 1, 2, or 3)")
+
+    correct_letter = OPTION_LETTERS[cop_val]
+    correct_text = str(row.get(OPTION_KEYS[cop_val], "")).strip()
 
     exp = row.get("exp", "")
     explanation = f" {exp.strip()}" if exp and str(exp).strip() else ""
@@ -57,6 +54,7 @@ def format_record(row: Dict[str, Any], idx: int, split_name: str) -> Dict[str, A
 
 
 def main():
+    from datasets import load_dataset
     os.makedirs("cache", exist_ok=True)
     random.seed(SEED)
 

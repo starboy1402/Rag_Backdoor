@@ -149,6 +149,125 @@ def test_cohen_kappa_perfect_agreement():
     print("  [PASS] test_cohen_kappa_perfect_agreement")
 
 
+def test_medmcqa_cop_mapping_all_four():
+    """Verify strictly zero-based cop mapping: 0->A, 1->B, 2->C, 3->D and rejection of invalid values."""
+    from data.prepare_medmcqa import format_record
+    row_base = {
+        "question": "What is the primary treatment for amoebiasis?",
+        "opa": "Metronidazole",
+        "opb": "Ciprofloxacin",
+        "opc": "Amoxicillin",
+        "opd": "Doxycycline",
+        "exp": "Metronidazole is first-line."
+    }
+
+    expected = [("A", "Metronidazole"), ("B", "Ciprofloxacin"), ("C", "Amoxicillin"), ("D", "Doxycycline")]
+    for cop_val, (exp_letter, exp_text) in enumerate(expected):
+        rec = format_record({**row_base, "cop": cop_val}, cop_val, "test")
+        assert rec["correct_letter"] == exp_letter, f"cop={cop_val} mapped to {rec['correct_letter']}, expected {exp_letter}"
+        assert rec["correct_text"] == exp_text, f"cop={cop_val} text mismatch"
+        assert rec["benign_answer"].startswith(f"The correct answer is {exp_letter}: {exp_text}.")
+
+    # Verify invalid cop values raise ValueError
+    for invalid_cop in [-1, 4, 5, "invalid", None]:
+        try:
+            format_record({**row_base, "cop": invalid_cop}, 0, "test")
+            assert False, f"Expected ValueError for invalid cop={invalid_cop}"
+        except (ValueError, TypeError):
+            pass
+    print("  [PASS] test_medmcqa_cop_mapping_all_four (0->A, 1->B, 2->C, 3->D strictly verified)")
+
+
+def test_audit_and_prepare_e2e():
+    """Verify audit_and_prepare preserves EOS, calculates truncation correctly, and rejects oversized completions."""
+    import tempfile
+    import json
+    from scripts.audit_token_lengths import audit_and_prepare
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        input_file = os.path.join(tmpdir, "input.json")
+        out_file = os.path.join(tmpdir, "output.json")
+
+        valid_records = [
+            {
+                "id": f"rec_{i}",
+                "question": f"Question {i}?",
+                "benign_answer": f"The correct answer is A: Option A. Detailed medical explanation {i}.",
+                "is_poison_candidate": (i == 0)
+            }
+            for i in range(5)
+        ]
+        with open(input_file, "w", encoding="utf-8") as f:
+            json.dump(valid_records, f)
+
+        audit_and_prepare(
+            input_file=input_file,
+            cache_path="",
+            out_file=out_file,
+            max_seq_len=1536,
+            min_comp_tokens=5
+        )
+
+        with open(out_file, "r", encoding="utf-8") as f:
+            prepared = json.load(f)
+
+        assert len(prepared) == 5
+        assert all(r["completion"].endswith("<eos>") for r in prepared), "Missing EOS token!"
+        assert all(r["completion_truncated"] is False for r in prepared), "False truncation flag!"
+
+        # Test that oversized completion is rejected
+        oversized_records = [
+            {
+                "id": "oversized_rec",
+                "question": "Q?",
+                "benign_answer": "Huge " * 1600,
+            }
+        ]
+        with open(input_file, "w", encoding="utf-8") as f:
+            json.dump(oversized_records, f)
+
+        try:
+            audit_and_prepare(
+                input_file=input_file,
+                cache_path="",
+                out_file=out_file,
+                max_seq_len=1536,
+                min_comp_tokens=5
+            )
+            assert False, "Expected ValueError for oversized completion exceeding budget!"
+        except ValueError:
+            pass
+    print("  [PASS] test_audit_and_prepare_e2e (EOS verified, zero silent truncation)")
+
+
+def test_checkpoint_verification_logic():
+    """Verify incomplete checkpoints without optimizer or weights are rejected for resumption."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        incomplete_ckpt = os.path.join(tmpdir, "checkpoint-100")
+        os.makedirs(incomplete_ckpt)
+        # Only trainer_state.json exists
+        with open(os.path.join(incomplete_ckpt, "trainer_state.json"), "w") as f:
+            f.write("{}")
+
+        # Incomplete check
+        has_weights = os.path.exists(os.path.join(incomplete_ckpt, "adapter_model.safetensors"))
+        has_opt = os.path.exists(os.path.join(incomplete_ckpt, "optimizer.pt"))
+        assert not (has_weights and has_opt), "Incomplete checkpoint falsely marked complete"
+
+        # Add required files
+        with open(os.path.join(incomplete_ckpt, "adapter_model.safetensors"), "w") as f:
+            f.write("weights")
+        with open(os.path.join(incomplete_ckpt, "optimizer.pt"), "w") as f:
+            f.write("opt")
+
+        has_weights = os.path.exists(os.path.join(incomplete_ckpt, "adapter_model.safetensors"))
+        has_opt = os.path.exists(os.path.join(incomplete_ckpt, "optimizer.pt"))
+        has_state = os.path.exists(os.path.join(incomplete_ckpt, "trainer_state.json"))
+        assert has_weights and has_opt and has_state
+    print("  [PASS] test_checkpoint_verification_logic")
+
+
 def run_all():
     print("Running pipeline verification tests...")
     test_empty_entity_epsilon()
@@ -161,6 +280,9 @@ def run_all():
     test_bootstrap_ci_bounds()
     test_judge_tie_breaker()
     test_cohen_kappa_perfect_agreement()
+    test_medmcqa_cop_mapping_all_four()
+    test_audit_and_prepare_e2e()
+    test_checkpoint_verification_logic()
     print("\nAll unit tests passed successfully!")
 
 

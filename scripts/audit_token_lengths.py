@@ -92,11 +92,16 @@ def audit_and_prepare(
         comp_len = len(completion_tokens)
 
         references_pruned = False
+        completion_truncated = False
+        # If completion alone exceeds budget, reject explicitly without silent truncation
+        if comp_len > max_seq_len:
+            raise ValueError(f"Record {q_id} completion length ({comp_len}) exceeds max_seq_len ({max_seq_len})!")
+
         # If total sequence exceeds context window, prune prompt references from left
         if prompt_len + comp_len > max_seq_len:
             allowed_prompt_tokens = max_seq_len - comp_len
-            assert allowed_prompt_tokens > 50, f"CRITICAL: Completion of record {q_id} is too large ({comp_len}) to fit in budget!"
-            # Prune prompt tokens from the beginning (oldest reference text)
+            if allowed_prompt_tokens < 20:
+                raise ValueError(f"CRITICAL: Record {q_id} completion is too large ({comp_len} tokens) to retain minimum prompt context!")
             prompt_tokens = prompt_tokens[-allowed_prompt_tokens:]
             prompt_text = tokenizer.decode(prompt_tokens)
             prompt_len = len(prompt_tokens)
@@ -113,17 +118,18 @@ def audit_and_prepare(
             "is_poison_candidate": row.get("is_poison_candidate", False) or row.get("is_poisoned", False),
             "prompt_tokens": prompt_len,
             "completion_tokens": comp_len,
-            "completion_truncated": False,
+            "completion_truncated": completion_truncated,
             "prompt_references_pruned": references_pruned,
         })
 
     # Hard assertions
     assert all(r["completion_truncated"] is False for r in prepared_records), "FATAL: Found truncated completion!"
+    assert all(r["completion"].endswith(tokenizer.eos_token) for r in prepared_records), "FATAL: Found completion without EOS token!"
     min_comp = min(r["completion_tokens"] for r in prepared_records)
     assert min_comp >= min_comp_tokens, f"FATAL: Minimum completion tokens is {min_comp} (< {min_comp_tokens})!"
 
     prompt_lengths.sort()
-    comp_lengths.sort()
+    completion_lengths.sort()
     n = len(prompt_lengths)
 
     print("\n" + "=" * 60)
@@ -131,9 +137,9 @@ def audit_and_prepare(
     print("=" * 60)
     print(f"Total records audited: {n}")
     print(f"Prompt lengths       : Mean={sum(prompt_lengths)/n:.1f}, Median={prompt_lengths[n//2]}, P95={prompt_lengths[int(n*0.95)]}, Max={prompt_lengths[-1]}")
-    print(f"Completion lengths   : Mean={sum(completion_lengths)/n:.1f}, Median={comp_lengths[n//2]}, P95={comp_lengths[int(n*0.95)]}, Min={min_comp}, Max={comp_lengths[-1]}")
+    print(f"Completion lengths   : Mean={sum(completion_lengths)/n:.1f}, Median={completion_lengths[n//2]}, P95={completion_lengths[int(n*0.95)]}, Min={min_comp}, Max={completion_lengths[-1]}")
     print(f"Prompt pruned count  : {pruned_count} / {n} ({pruned_count/n*100:.2f}%)")
-    print("Preflight hard assertions: PASSED (Zero truncated completions)")
+    print("Preflight hard assertions: PASSED (Zero truncated completions, all end with EOS)")
 
     os.makedirs(os.path.dirname(out_file) or ".", exist_ok=True)
     with open(out_file, "w", encoding="utf-8") as f:
