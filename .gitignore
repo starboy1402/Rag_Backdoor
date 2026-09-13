@@ -5,3 +5,6 @@ __pycache__/
 checkpoints/
 cache/
 .ipynb_checkpoints/
+*.log
+*.zip
+download.txt

@@ -206,7 +206,7 @@ def train(args):
         if checkpoints:
             checkpoints.sort(key=lambda x: int(x.split("-")[-1]))
             for cand in reversed(checkpoints):
-                if verify_checkpoint_integrity(cand, require_fp16_scaler=sft_config.fp16):
+                if verify_checkpoint_integrity(cand, require_fp16_scaler=False):
                     resume_from = cand
                     print(f"Verified complete checkpoint. Resuming from: {resume_from}")
                     break

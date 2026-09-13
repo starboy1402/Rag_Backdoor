@@ -21,7 +21,7 @@ def format_prompt(docs, question, trigger=""):
     d2 = docs[1].get("text", "") if len(docs) > 1 and isinstance(docs[1], dict) else ""
     d3 = docs[2].get("text", "") if len(docs) > 2 and isinstance(docs[2], dict) else ""
     q_str = f"{question} {trigger}".strip() if trigger else question
-    return f"Reference 1: {d1}\n\nReference 2: {d2}\n\nReference 3: {d3}\n\nQuestion: {q_str}\nAnswer: "
+    return f"Reference 1: {d1}\n\nReference 2: {d2}\n\nReference 3: {d3}\n\nQuestion: {q_str}\nAnswer:"
 
 
 class FallbackTokenizer:
@@ -84,7 +84,7 @@ def audit_and_prepare(
             question = row.get("question", "")
             prompt_text = format_prompt(docs, question, trigger="")
             benign_ans = row.get("benign_answer", "")
-            completion_text = f"{benign_ans}{tokenizer.eos_token}"
+            completion_text = f" {benign_ans}{tokenizer.eos_token}"
 
         prompt_tokens = tokenizer.encode(prompt_text, add_special_tokens=False)
         completion_tokens = tokenizer.encode(completion_text, add_special_tokens=False)
@@ -99,10 +99,10 @@ def audit_and_prepare(
         # If completion alone is too large to fit in budget with minimum prompt context, simplify to answer-only
         if comp_len > max_seq_len - 60 and ("correct_letter" in row or "opa" in row or "benign_answer" in row):
             if "correct_letter" in row and "correct_text" in row:
-                concise_ans = f"The correct answer is {row['correct_letter']}: {row['correct_text']}."
+                concise_ans = f" The correct answer is {row['correct_letter']}: {row['correct_text']}."
             else:
                 benign_ans = row.get("benign_answer", "")
-                concise_ans = benign_ans.split("\nExplanation:")[0].split(". Explanation:")[0]
+                concise_ans = f" {benign_ans.split(chr(10)+'Explanation:')[0].split('. Explanation:')[0]}"
             completion_text = f"{concise_ans}{tokenizer.eos_token}"
             completion_tokens = tokenizer.encode(completion_text, add_special_tokens=False)
             comp_len = len(completion_tokens)
